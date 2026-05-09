@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extrator B3 — Nota de Corretagem · Bertoi Informática</title>
+  <link rel="icon" href="extrator-b3-logo.svg" type="image/svg+xml"/>
+  <meta name="description" content="Extrator gratuito de Nota de Corretagem B3. Converta PDFs de corretoras em planilhas Excel automaticamente. 100% no navegador, sem cadastro."/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #080e1a; --surface: #111827; --surface2: #1a2236;
+      --border: #1e2d45; --accent: #6366f1; --accent2: #3b82f6;
+      --success: #22c55e; --danger: #ef4444;
+      --text: #f1f5f9; --muted: #64748b; --subtle: #94a3b8;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    .app-header {
+      background: linear-gradient(135deg, #0f1629, #0d1b35);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex; align-items: center; gap: 1rem;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .app-logo {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+    }
+    .app-title h1 { font-size: 1rem; font-weight: 700; }
+    .app-title p  { font-size: .72rem; color: var(--muted); }
+
+    /* ── Stepper ── */
+    .stepper { display: flex; align-items: center; margin-left: auto; gap: 0; }
+    .step { display: flex; align-items: center; gap: .45rem; padding: .35rem .65rem; border-radius: 99px; font-size: .75rem; font-weight: 600; color: var(--muted); }
+    .step-num { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: .68rem; transition: all .3s; }
+    .step.active { color: var(--text); }
+    .step.active .step-num { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+    .step.done .step-num   { background: var(--success); border-color: transparent; color: #fff; }
+    .step.done             { color: var(--subtle); }
+    .step-divider { width: 28px; height: 1px; background: var(--border); }
+
+    /* ── Panels ── */
+    .main { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* ── Upload ── */
+    .upload-center { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 70px); }
+    .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 2.5rem; width: 100%; max-width: 520px; text-align: center; }
+    .upload-badge { display: inline-flex; align-items: center; gap: .4rem; background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.25); color: #a5b4fc; font-size: .72rem; font-weight: 600; padding: .28rem .7rem; border-radius: 99px; margin-bottom: 1.25rem; letter-spacing: .04em; }
+    .upload-card h2 { font-size: 1.6rem; font-weight: 800; margin-bottom: .4rem; background: linear-gradient(135deg,#e0e7ff,#c7d2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .upload-card > p { color: var(--muted); font-size: .86rem; margin-bottom: 1.75rem; }
+    .drop-zone { border: 2px dashed var(--border); border-radius: 14px; padding: 2.25rem 1.5rem; cursor: pointer; transition: all .2s; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(99,102,241,.06); }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-icon { font-size: 2.25rem; margin-bottom: .6rem; }
+    .drop-label { font-size: .84rem; color: var(--muted); }
+    .drop-link  { color: #818cf8; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .file-info  { display: none; align-items: center; gap: .7rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: .65rem .9rem; margin-top: .9rem; text-align: left; }
+    .file-info.show { display: flex; }
+    .file-icon  { width: 34px; height: 34px; background: rgba(239,68,68,.12); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+    .file-name  { font-size: .82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-size  { font-size: .7rem; color: var(--muted); }
+
+    /* ── Buttons ── */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; padding: .65rem 1.4rem; border-radius: 10px; font-size: .85rem; font-weight: 600; cursor: pointer; border: none; transition: all .15s; white-space: nowrap; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 4px 18px rgba(99,102,241,.3); }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 24px rgba(99,102,241,.45); transform: translateY(-1px); }
+    .btn-success { background: linear-gradient(135deg,#16a34a,#22c55e); color: #fff; box-shadow: 0 4px 18px rgba(34,197,94,.2); }
+    .btn-success:hover:not(:disabled) { box-shadow: 0 6px 24px rgba(34,197,94,.35); transform: translateY(-1px); }
+    .btn-ghost { background: var(--surface2); color: var(--subtle); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--border); color: var(--text); }
+    .btn-sm { padding: .4rem .9rem; font-size: .76rem; border-radius: 7px; }
+
+    /* ── Processing ── */
+    .processing-center { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 70px); }
+    .processing-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 2.75rem; width: 100%; max-width: 440px; text-align: center; }
+    .spinner { width: 52px; height: 52px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 1.25rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .processing-title { font-size: 1.05rem; font-weight: 700; margin-bottom: .3rem; }
+    .processing-sub   { font-size: .8rem; color: var(--muted); margin-bottom: 1.25rem; }
+    .progress-wrap    { background: var(--border); border-radius: 99px; height: 5px; overflow: hidden; margin-bottom: .6rem; }
+    .progress-fill    { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .2s ease; width: 0%; }
+    .progress-label   { font-size: .72rem; color: var(--muted); }
+
+    /* ── Results ── */
+    .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: .75rem; }
+    .results-title h2 { font-size: 1.3rem; font-weight: 700; }
+    .results-title p  { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+    .results-actions  { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+    /* ── KPI ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(195px,1fr)); gap: .9rem; margin-bottom: 1.25rem; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.1rem 1.2rem; position: relative; overflow: hidden; }
+    .kpi-card::before { content:''; position:absolute; top:0;left:0;right:0;height:2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    .kpi-icon  { position:absolute;top:.9rem;right:1rem;font-size:1rem;opacity:.35; }
+    .kpi-label { font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem; }
+    .kpi-value { font-size:1.3rem;font-weight:800;letter-spacing:-.02em; }
+    .kpi-sub   { font-size:.68rem;color:var(--muted);margin-top:.25rem; }
+
+    /* ── Content grid ── */
+    .content-grid { display: grid; grid-template-columns: 210px 1fr; gap: 1rem; align-items: start; }
+    @media(max-width:800px){.content-grid{grid-template-columns:1fr;}}
+
+    /* ── Chart card ── */
+    .chart-card { background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.1rem; }
+    .chart-title { font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.9rem; }
+    #pieCanvas { display:block;margin:0 auto .7rem; }
+    .legend { display:flex;flex-direction:column;gap:.4rem; }
+    .legend-item { display:flex;align-items:center;gap:.45rem;font-size:.75rem; }
+    .legend-dot  { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
+    .legend-val  { margin-left:auto;font-weight:700;font-size:.75rem; }
+
+    /* ── Table card ── */
+    .table-card { background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden; }
+    .table-toolbar { padding:.9rem 1.1rem;border-bottom:1px solid var(--border);display:flex;gap:.6rem;flex-wrap:wrap;align-items:center; }
+    .search-wrap { position:relative; }
+    .search-wrap::before { content:'🔍';position:absolute;left:.55rem;top:50%;transform:translateY(-50%);font-size:.68rem;pointer-events:none; }
+    .search-input { background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.8rem;padding:.4rem .7rem .4rem 1.85rem;outline:none;transition:border-color .2s;width:210px; }
+    .search-input:focus { border-color:var(--accent); }
+    .filter-select { background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.8rem;padding:.4rem .7rem;outline:none;cursor:pointer; }
+    .table-count { font-size:.72rem;color:var(--muted);margin-left:auto; }
+    .table-wrapper { overflow-x:auto; }
+    table { width:100%;border-collapse:collapse;font-size:.78rem; }
+    th { background:var(--surface2);color:var(--muted);text-align:left;padding:.55rem .85rem;white-space:nowrap;border-bottom:1px solid var(--border);font-weight:600;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none; }
+    th:hover { color:var(--text); }
+    th.sort-asc::after  { content:' ↑'; color:var(--accent); }
+    th.sort-desc::after { content:' ↓'; color:var(--accent); }
+    td { padding:.5rem .85rem;border-bottom:1px solid rgba(30,45,69,.5);white-space:nowrap;vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:rgba(99,102,241,.05); }
+    .badge { display:inline-block;padding:.18rem .55rem;border-radius:99px;font-size:.65rem;font-weight:700;letter-spacing:.04em; }
+    /* Mercado financeiro BR: COMPRA = vermelho (saída de caixa), VENDA = verde (entrada de caixa) */
+    .badge-c  { background:rgba(239,68,68,.15);  color:#f87171; }
+    .badge-v  { background:rgba(34,197,94,.15);  color:#4ade80; }
+    .badge-d  { background:rgba(239,68,68,.15);  color:#f87171; }
+    .badge-cr { background:rgba(34,197,94,.15);  color:#4ade80; }
+
+    /* ── Pagination ── */
+    .pagination { display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.4rem; }
+    .page-info  { font-size:.72rem;color:var(--muted); }
+    .page-btns  { display:flex;gap:.35rem;align-items:center; }
+    .page-btn   { width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--subtle);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s; }
+    .page-btn:hover   { border-color:var(--accent);color:var(--text); }
+    .page-btn.active  { background:var(--accent);border-color:var(--accent);color:#fff; }
+    .page-btn:disabled{ opacity:.3;cursor:not-allowed; }
+
+    /* ── Debug ── */
+    .debug-card { background:#050a14;border:1px solid var(--border);border-radius:14px;padding:.9rem 1.1rem;margin-top:1rem;font-family:'Cascadia Code','Fira Code',monospace;font-size:.7rem;color:#64748b;max-height:200px;overflow-y:auto;white-space:pre-wrap;display:none; }
+
+    /* ── Toasts ── */
+    #toastCont { position:fixed;bottom:1.25rem;right:1.25rem;display:flex;flex-direction:column;gap:.45rem;z-index:9999;pointer-events:none; }
+    .toast { background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.8rem 1.1rem;display:flex;align-items:center;gap:.65rem;min-width:240px;max-width:340px;box-shadow:0 8px 28px rgba(0,0,0,.45);animation:slideIn .25s ease;pointer-events:auto; }
+    .toast.removing { animation:slideOut .2s ease forwards; }
+    @keyframes slideIn { from{opacity:0;transform:translateX(18px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes slideOut { to{opacity:0;transform:translateX(18px)} }
+    .toast-icon  { font-size:1rem;flex-shrink:0; }
+    .toast-title { font-size:.8rem;font-weight:700; }
+    .toast-msg   { font-size:.72rem;color:var(--muted);margin-top:.1rem; }
+    .toast.ok    { border-left:3px solid var(--success); }
+    .toast.error { border-left:3px solid var(--danger); }
+    .toast.info  { border-left:3px solid var(--accent); }
+
+    /* ── LGPD badge ── */
+    .lgpd-badge { display:inline-flex;align-items:center;gap:.35rem;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.18);color:#818cf8;font-size:.68rem;font-weight:600;padding:.25rem .65rem;border-radius:99px;margin-top:1rem;letter-spacing:.03em; }
+
+    /* ── Footer ── */
+    .app-footer { border-top:1px solid var(--border);padding:1.25rem 2rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-top:2.5rem; }
+    .footer-brand { font-size:.72rem;color:var(--muted); }
+    .footer-brand strong { color:var(--subtle); }
+    .footer-links { display:flex;gap:1rem;align-items:center; }
+    .footer-link { font-size:.72rem;color:var(--muted);cursor:pointer;text-decoration:underline;text-underline-offset:2px;background:none;border:none;padding:0; }
+    .footer-link:hover { color:var(--subtle); }
+
+    /* ── Privacy modal ── */
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;opacity:0;pointer-events:none;transition:opacity .25s; }
+    .modal-overlay.open { opacity:1;pointer-events:auto; }
+    .modal { background:var(--surface);border:1px solid var(--border);border-radius:20px;width:100%;max-width:680px;max-height:85vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .25s; }
+    .modal-overlay.open .modal { transform:translateY(0); }
+    .modal-header { display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border); }
+    .modal-header h2 { font-size:1rem;font-weight:700; }
+    .modal-close { width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--subtle);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center; }
+    .modal-close:hover { background:var(--border);color:var(--text); }
+    .modal-body { padding:1.5rem;overflow-y:auto;font-size:.82rem;line-height:1.7;color:var(--subtle); }
+    .modal-body h3 { font-size:.82rem;font-weight:700;color:var(--text);margin:1.25rem 0 .4rem;text-transform:uppercase;letter-spacing:.05em; }
+    .modal-body h3:first-child { margin-top:0; }
+    .modal-body p  { margin-bottom:.75rem; }
+    .modal-body ul { padding-left:1.2rem;margin-bottom:.75rem; }
+    .modal-body li { margin-bottom:.3rem; }
+    .modal-body .highlight { background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);border-radius:8px;padding:.75rem 1rem;margin:.75rem 0;color:var(--text);font-size:.8rem; }
+    .modal-footer { padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end; }
+  </style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-logo" style="background:none;padding:0;overflow:hidden">
+    <img src="extrator-b3-logo.svg" alt="Extrator B3" width="38" height="38" style="border-radius:10px;display:block"/>
+  </div>
+  <div class="app-title">
+    <h1>Extrator B3</h1>
+    <p>Nota de Corretagem → Excel</p>
+  </div>
+  <nav class="stepper" id="stepper">
+    <div class="step active" data-step="1"><div class="step-num">1</div><span>Upload</span></div>
+    <div class="step-divider"></div>
+    <div class="step" data-step="2"><div class="step-num">2</div><span>Processando</span></div>
+    <div class="step-divider"></div>
+    <div class="step" data-step="3"><div class="step-num">3</div><span>Resultados</span></div>
+  </nav>
+</header>
+
+<main class="main">
+
+  <!-- STEP 1 Upload -->
+  <div class="step-panel active" id="panel1">
+    <div class="upload-center">
+      <div class="upload-card">
+        <div class="upload-badge">✦ B3 PDF Parser</div>
+        <h2>Nota de Corretagem</h2>
+        <p>Arraste o PDF da sua corretora e extraia todas as negociações automaticamente</p>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept=".pdf" />
+          <div class="drop-icon">📂</div>
+          <div class="drop-label">Arraste o PDF aqui ou <span class="drop-link" onclick="document.getElementById('fileInput').click()">clique para selecionar</span></div>
+        </div>
+        <div class="file-info" id="fileInfo">
+          <div class="file-icon">📄</div>
+          <div style="flex:1;min-width:0">
+            <div class="file-name" id="fileName">—</div>
+            <div class="file-size" id="fileSize">—</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="clearFile()">✕</button>
+        </div>
+        <div style="margin-top:1.4rem">
+          <button class="btn btn-primary" id="btnProcess" disabled onclick="processar()" style="width:100%">⚙️ Processar PDF</button>
+        </div>
+        <div style="text-align:center">
+          <span class="lgpd-badge">🔒 100% local · nenhum dado é armazenado ou transmitido</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 Processing -->
+  <div class="step-panel" id="panel2">
+    <div class="processing-center">
+      <div class="processing-card">
+        <div class="spinner"></div>
+        <div class="processing-title">Analisando PDF</div>
+        <div class="processing-sub" id="processingMsg">Extraindo texto das páginas...</div>
+        <div class="progress-wrap"><div class="progress-fill" id="progressBar"></div></div>
+        <div class="progress-label" id="progressLabel">0 / 0 páginas</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 Results -->
+  <div class="step-panel" id="panel3">
+    <div class="results-header">
+      <div class="results-title">
+        <h2>Negociações Extraídas</h2>
+        <p id="resultsSubtitle">—</p>
+      </div>
+      <div class="results-actions">
+        <button class="btn btn-ghost btn-sm" onclick="goStep(1)">← Novo PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleDebug()">🔍 Diagnóstico</button>
+        <button class="btn btn-success" id="btnExport" onclick="exportarExcel()">⬇️ Baixar Excel</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="content-grid">
+      <div class="chart-card">
+        <div class="chart-title">Compras vs Vendas</div>
+        <canvas id="pieCanvas" width="150" height="150"></canvas>
+        <div class="legend" id="pieLegend"></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <div class="search-wrap">
+            <input class="search-input" id="searchInput" placeholder="Buscar ativo, nota..." oninput="filtrarTabela()" />
+          </div>
+          <select class="filter-select" id="filterNota" onchange="filtrarTabela()">
+            <option value="">Todas as notas</option>
+          </select>
+          <select class="filter-select" id="filterCV" onchange="filtrarTabela()">
+            <option value="">C / V</option>
+            <option value="C">Compra</option>
+            <option value="V">Venda</option>
+          </select>
+          <span class="table-count" id="tableCount">—</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead id="tableHead"></thead>
+            <tbody id="tabelaBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span class="page-info" id="pageInfo">—</span>
+          <div class="page-btns" id="pageBtns"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="debug-card" id="debugPanel"></div>
+  </div>
+
+</main>
+
+<div id="toastCont"></div>
+
+<!-- Privacy Policy Modal -->
+<div class="modal-overlay" id="privacyModal" onclick="fecharPrivacidade(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>🔒 Política de Privacidade</h2>
+      <button class="modal-close" onclick="fecharPrivacidade()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="highlight">
+        ✅ Este aplicativo opera <strong>100% localmente no seu navegador</strong>. Nenhum dado pessoal, financeiro ou arquivo é enviado a servidores, armazenado em disco ou compartilhado com terceiros.
+      </div>
+
+      <h3>1. Identificação do Controlador</h3>
+      <p>Este produto é desenvolvido e mantido pela <strong>Bertoi Informática</strong>, responsável pelo tratamento de dados nos termos desta política.</p>
+
+      <h3>2. Dados Tratados</h3>
+      <p>O Extrator B3 processa, <strong>exclusivamente em memória RAM</strong> do seu dispositivo, os seguintes dados contidos nos PDFs de Nota de Corretagem:</p>
+      <ul>
+        <li>Número e data da nota de corretagem</li>
+        <li>Dados de negociações (ativo, quantidade, preço, valor operação)</li>
+        <li>Taxas e encargos financeiros da nota</li>
+      </ul>
+      <p>Esses dados <strong>nunca saem do seu dispositivo</strong> e são descartados automaticamente ao fechar ou recarregar a página.</p>
+
+      <h3>3. Finalidade do Tratamento</h3>
+      <p>Os dados são tratados com a única finalidade de gerar o arquivo Excel solicitado pelo próprio usuário, sem qualquer análise, perfilamento ou uso secundário.</p>
+
+      <h3>4. Ausência de Armazenamento e Transmissão</h3>
+      <p>Este aplicativo:</p>
+      <ul>
+        <li>Não utiliza <em>localStorage</em>, <em>sessionStorage</em>, <em>IndexedDB</em>, <em>cookies</em> ou qualquer mecanismo de persistência</li>
+        <li>Não realiza requisições de rede com dados do usuário</li>
+        <li>Não integra SDKs de analytics, rastreamento ou publicidade</li>
+        <li>Não coleta endereço IP, identificadores de dispositivo ou metadados de uso</li>
+      </ul>
+
+      <h3>5. Base Legal (LGPD — Lei nº 13.709/2018)</h3>
+      <p>O tratamento dos dados se baseia no <strong>legítimo interesse e consentimento do titular</strong> (art. 7º, II e IX da LGPD), uma vez que o próprio usuário fornece voluntariamente o arquivo e aciona o processamento. Não há coleta de dados sensíveis nos termos do art. 11 da LGPD.</p>
+
+      <h3>6. Direitos do Titular</h3>
+      <p>Como nenhum dado pessoal é armazenado, os direitos de acesso, correção, portabilidade e eliminação são satisfeitos de forma automática — ao encerrar o uso, todos os dados processados são descartados da memória.</p>
+
+      <h3>7. Hospedagem e Logs de Acesso</h3>
+      <p>Este aplicativo é disponibilizado por meio de infraestrutura de hospedagem estática (atualmente <strong>GitHub Pages</strong>, da GitHub Inc. / Microsoft Corp.). Ao acessar o site, o servidor de hospedagem registra automaticamente dados técnicos de conexão, incluindo:</p>
+      <ul>
+        <li>Endereço IP do visitante</li>
+        <li>Data e hora do acesso</li>
+        <li>Tipo de navegador e sistema operacional (<em>user-agent</em>)</li>
+        <li>URL requisitada</li>
+      </ul>
+      <p>Esses registros são coletados exclusivamente pela plataforma de hospedagem para fins de segurança e operação da infraestrutura, <strong>não sendo acessados ou utilizados pela Bertoi Informática</strong>. Consulte a <a href="https://docs.github.com/pt/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" style="color:#818cf8">Política de Privacidade do GitHub</a> para informações sobre o tratamento desses dados.</p>
+      <p>O aplicativo em si <strong>não realiza nenhuma requisição de rede</strong> com dados do usuário após o carregamento inicial da página.</p>
+
+      <h3>8. Segurança</h3>
+      <p>O processamento local elimina os principais vetores de violação de dados em trânsito. O arquivo Excel gerado é entregue diretamente ao dispositivo do usuário, sem passar por intermediários. A conexão com o site é protegida por <strong>HTTPS/TLS</strong> provido pela plataforma de hospedagem.</p>
+
+      <h3>9. Contato (Encarregado de Dados — DPO)</h3>
+      <p>Para dúvidas sobre esta política ou sobre o tratamento de dados, entre em contato com a Bertoi Informática pelos canais oficiais disponíveis no site.</p>
+
+      <h3>10. Atualizações desta Política</h3>
+      <p>Esta política pode ser atualizada a qualquer tempo. A versão vigente estará sempre disponível nesta aplicação. Última atualização: <strong>maio de 2025</strong>.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="fecharPrivacidade()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="app-footer">
+  <div class="footer-brand">
+    <strong>Bertoi Informática</strong> · Extrator B3 · © 2025
+  </div>
+  <div class="footer-links">
+    <span class="lgpd-badge" style="margin:0">🔒 LGPD Compliant</span>
+    <button class="footer-link" onclick="abrirPrivacidade()">Política de Privacidade</button>
+  </div>
+</footer>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  let pdfFile = null, negociacoes = [], debugLog = [];
+  let filtradas = [], sortCol = null, sortDir = 1, currentPage = 1;
+  const PAGE_SIZE = 12;
+
+  // ── Stepper ──────────────────────────────────────────────────────────────────
+  function goStep(n) {
+    document.querySelectorAll('.step-panel').forEach((p,i) => p.classList.toggle('active', i+1===n));
+    document.querySelectorAll('.step').forEach((s,i) => {
+      const sn = i+1;
+      s.classList.toggle('active', sn===n);
+      s.classList.toggle('done',   sn<n);
+    });
+    if (n === 1) {
+      // LGPD: limpa todos os dados da sessão ao voltar para upload
+      limparDados();
+      document.getElementById('btnProcess').disabled = !pdfFile;
+    }
+  }
+
+  // ── LGPD: limpeza explícita de memória ────────────────────────────────────────
+  function limparDados() {
+    negociacoes = [];
+    filtradas   = [];
+    debugLog    = [];
+    sortCol     = null;
+    sortDir     = 1;
+    currentPage = 1;
+  }
+
+  // Garante limpeza ao fechar/recarregar a página
+  window.addEventListener('beforeunload', limparDados);
+
+  // ── Modal de Privacidade ──────────────────────────────────────────────────────
+  function abrirPrivacidade() {
+    document.getElementById('privacyModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function fecharPrivacidade(e) {
+    if (e && e.target !== document.getElementById('privacyModal')) return;
+    document.getElementById('privacyModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') fecharPrivacidade();
+  });
+
+  // ── Toast ─────────────────────────────────────────────────────────────────────
+  function toast(title, msg, type='info') {
+    const icons = {ok:'✅', error:'❌', info:'ℹ️'};
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="toast-icon">${icons[type]}</span>
+      <div><div class="toast-title">${title}</div>${msg?`<div class="toast-msg">${msg}</div>`:''}</div>`;
+    document.getElementById('toastCont').appendChild(el);
+    setTimeout(() => { el.classList.add('removing'); setTimeout(()=>el.remove(),220); }, 4000);
+  }
+
+  // ── Log ───────────────────────────────────────────────────────────────────────
+  function log(...a) { const l=a.join(' '); debugLog.push(l); console.log(l); }
+  function toggleDebug() {
+    const p = document.getElementById('debugPanel');
+    const v = p.style.display === 'block';
+    p.style.display = v ? 'none' : 'block';
+    if (!v) p.textContent = debugLog.length ? debugLog.join('\n') : '(sem dados)';
+  }
+
+  // ── Drag & drop ───────────────────────────────────────────────────────────────
+  const dropZone  = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type==='application/pdf') setFile(f);
+    else toast('Arquivo inválido','Selecione um PDF','error');
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+  function setFile(f) {
+    pdfFile = f;
+    document.getElementById('fileName').textContent = f.name;
+    document.getElementById('fileSize').textContent = `${(f.size/1024).toFixed(1)} KB`;
+    document.getElementById('fileInfo').classList.add('show');
+    document.getElementById('btnProcess').disabled = false;
+    debugLog = [];
+  }
+  function clearFile() {
+    pdfFile = null; fileInput.value = '';
+    document.getElementById('fileInfo').classList.remove('show');
+    document.getElementById('btnProcess').disabled = true;
+  }
+
+  // ── Progress ──────────────────────────────────────────────────────────────────
+  function setProgress(cur, total, msg) {
+    const pct = total>0 ? Math.round((cur/total)*100) : 0;
+    document.getElementById('progressBar').style.width = pct+'%';
+    document.getElementById('progressLabel').textContent = `${cur} / ${total} páginas`;
+    if (msg) document.getElementById('processingMsg').textContent = msg;
+  }
+
+  // ── PDF extraction ────────────────────────────────────────────────────────────
+  async function extrairItensPDF(file) {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const items = [];
+    log(`PDF: ${pdf.numPages} página(s)`);
+    setProgress(0, pdf.numPages, 'Lendo páginas...');
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const pg  = await pdf.getPage(p);
+      const cnt = await pg.getTextContent();
+      for (const it of cnt.items) {
+        const text = it.str.trim();
+        if (text) items.push({ x: it.transform[4], y: it.transform[5], text, page: p });
+      }
+      setProgress(p, pdf.numPages, `Processando página ${p} de ${pdf.numPages}...`);
+    }
+    log(`Itens: ${items.length}`);
+    return items;
+  }
+
+  function agruparPorY(items, tol=3) {
+    const grupos = [];
+    for (const item of items) {
+      const g = grupos.find(g => g.page===item.page && Math.abs(g.y-item.y)<=tol);
+      if (g) g.items.push(item);
+      else   grupos.push({ y:item.y, page:item.page, items:[item] });
+    }
+    for (const g of grupos) { g.items.sort((a,b)=>a.x-b.x); g.text=g.items.map(i=>i.text).join(' '); }
+    return grupos.sort((a,b)=>a.page!==b.page?a.page-b.page:b.y-a.y);
+  }
+
+  function mapearAncoras(headerItems, cvItemRef) {
+    const anchors = {};
+    for (const item of headerItems) {
+      const t = item.text;
+      if (/C\/V/i.test(t))             anchors.cv            = item.x;
+      else if (/^Prazo$/i.test(t))      anchors.prazo         = item.x;
+      else if (/^Quantidade$/i.test(t)) anchors.quantidade    = item.x;
+      else if (/^D\/C$/i.test(t))       anchors.dc            = item.x;
+      else if (/^Obs/i.test(t))         anchors.obs           = item.x;
+      else if (/^Tipo\b/i.test(t))      anchors.tipoMercado   = item.x;
+      else if (/^Especifica/i.test(t))  anchors.especificacao = item.x;
+      else if (/^Pre[çc]/i.test(t))     anchors.preco         = item.x;
+      else if (/^Valor\b/i.test(t))     anchors.valor         = item.x;
+      else if (/^Negociação$|^Negocia/i.test(t)||t==='Q') {
+        if (!anchors.qNeg||item.x<anchors.qNeg) anchors.qNeg=item.x;
+      }
+    }
+    if (!anchors.qNeg && headerItems.length>0) anchors.qNeg=Math.min(...headerItems.map(i=>i.x));
+    if (!anchors.cv) anchors.cv = cvItemRef.x;
+    return anchors;
+  }
+
+  function extrairMetaDaNota(allItems, cvHeader) {
+    const meta = { nota:'', folha:'', dataPregao:'' };
+    const pg   = allItems.filter(i=>i.page===cvHeader.page);
+    function valProximo(label,pred) {
+      if (!label) return null;
+      const r = pg.filter(i=>Math.abs(i.y-label.y)<3&&i.x>label.x+3).find(pred);
+      if (r) return r.text;
+      return pg.filter(i=>Math.abs(i.x-label.x)<60&&i.y<label.y&&(label.y-i.y)<70).find(pred)?.text??null;
+    }
+    const notaLbl = pg.find(i=>/nr\.?\s*nota/i.test(i.text));
+    const folhaLbl= pg.find(i=>/\bfolha\b/i.test(i.text)&&i.text.length<10);
+    const dataLbl = pg.find(i=>/data\s+preg/i.test(i.text));
+    const nv=valProximo(notaLbl,i=>/^\d{6,12}$/.test(i.text)); if(nv) meta.nota=nv;
+    const fv=valProximo(folhaLbl,i=>/^\d{1,4}$/.test(i.text)); if(fv) meta.folha=fv;
+    if (dataLbl) {
+      const row=pg.filter(i=>Math.abs(i.y-dataLbl.y)<3).map(i=>i.text).join(' ');
+      const m=row.match(/(\d{2}\/\d{2}\/\d{4})/); if(m) meta.dataPregao=m[1];
+      if (!meta.dataPregao) {
+        const bw=pg.find(i=>Math.abs(i.x-dataLbl.x)<70&&i.y<dataLbl.y&&(dataLbl.y-i.y)<70&&/\d{2}\/\d{2}\/\d{4}/.test(i.text));
+        if(bw) meta.dataPregao=bw.text.match(/(\d{2}\/\d{2}\/\d{4})/)[1];
+      }
+    }
+    if (!meta.dataPregao) { const d=pg.find(i=>/\d{2}\/\d{2}\/\d{4}/.test(i.text)); if(d) meta.dataPregao=d.text.match(/(\d{2}\/\d{2}\/\d{4})/)[1]; }
+    if (!meta.nota)       { const n=pg.find(i=>/^\d{8,12}$/.test(i.text)); if(n) meta.nota=n.text; }
+    return meta;
+  }
+
+  function extrairResumoFinanceiro(allItems, cvHeader, proxCvPage) {
+    const maxPage = proxCvPage ?? 9999;
+    const pg = allItems.filter(i=>i.page>=cvHeader.page&&i.page<maxPage);
+    const grupos = agruparPorY(pg);
+    function buscar(regex, excluir) {
+      const g = grupos.find(g=>regex.test(g.text)&&(!excluir||!excluir.test(g.text)));
+      if (!g) return null;
+      const nums=[...g.items].reverse().filter(i=>/^[\d.,]+$/.test(i.text));
+      return nums.length ? parseBR(nums[0].text) : null;
+    }
+    return {
+      valorLiquidoOperacoes: buscar(/l[íi]quido das opera/i),
+      taxaLiquidacao:        buscar(/taxa de liquida[çc]/i),
+      taxaRegistro:          buscar(/taxa de registro/i),
+      debentures:            buscar(/deb[êe]ntures/i),
+      vendasAVista:          buscar(/vendas\s+[àa]\s+vista/i),
+      comprasAVista:         buscar(/compras\s+[àa]\s+vista/i),
+      opcoesCompras:         buscar(/op[çc][õo]es.*compras/i),
+      opcoesVendas:          buscar(/op[çc][õo]es.*vendas/i),
+      operacoesATermo:       buscar(/opera[çc][õo]es\s+[àa]\s+termo/i),
+      valorTitulosPublicos:  buscar(/t[íi]tulos\s+p[úu]bl/i),
+      valorDasOperacoes:     buscar(/valor das opera[çc][õo]es/i, /l[íi]quido/i),
+      taxaTermoOpcoes:       buscar(/taxa de termo/i),
+      taxaANA:               buscar(/taxa\s+a\.?n\.?a/i),
+      emolumentos:           buscar(/emolumentos/i),
+    };
+  }
+
+  function parseLinha(items, anchors) {
+    const sorted = [...items].sort((a,b)=>a.x-b.x);
+    const cvX    = anchors.cv            ?? 99;
+    const prazoX = anchors.prazo         ?? (cvX+82);
+    const especX = anchors.especificacao ?? (prazoX+26);
+    const obsX   = anchors.obs           ?? (especX+95);
+    const qtdX   = anchors.quantidade    ?? (obsX+30);
+
+    let dc='';
+    for (let j=sorted.length-1;j>=0;j--) {
+      const t=sorted[j].text;
+      if (t==='D'||t==='C') { dc=t; break; }
+      const m=t.match(/\s+([DC])$/); if(m){dc=m[1];break;}
+    }
+    const cvItm=sorted.find(i=>(i.text==='C'||i.text==='V')&&Math.abs(i.x-cvX)<=25);
+    if (!cvItm) return null;
+
+    const numNeg    = sorted.filter(i=>i.x<cvX-6).map(i=>i.text).join('');
+    const tipoItens = sorted.filter(i=>i!==cvItm&&i.x>cvX+5&&i.x<prazoX-4);
+    const prazoItm  = sorted.find(i=>/^\d{2}\/\d{2}$/.test(i.text)&&i.x>=prazoX-16&&i.x<=prazoX+16);
+    const tipoMercado = tipoItens.filter(i=>i!==prazoItm).map(i=>i.text).join(' ').trim();
+    const prazo       = prazoItm?prazoItm.text:'';
+    const numThreshold=(obsX+qtdX)/2;
+    const numItens=sorted.filter(i=>i.x>=numThreshold&&/^[\d.,]+$/.test(i.text)).sort((a,b)=>a.x-b.x);
+    const obsItm=sorted.find(i=>/^[#*]$/.test(i.text));
+    const excluidos=new Set([cvItm,prazoItm,obsItm,...tipoItens,...numItens].filter(Boolean));
+    const especItens=sorted.filter(i=>!excluidos.has(i)&&i.x>=especX-5&&i.x<numThreshold+5);
+    const especificacao=especItens.map(i=>i.text).join(' ').trim();
+    function limpar(s){return(s||'').replace(/\s*[DC]\s*$/,'').trim();}
+    return {
+      numNeg,cv:cvItm.text,tipoMercado,prazo,especificacao,obs:obsItm?obsItm.text:'',
+      quantidade:   numItens[0]?parseBR(limpar(numItens[0].text)):null,
+      preco:        numItens[1]?parseBR(limpar(numItens[1].text)):null,
+      valorOperacao:numItens[2]?parseBR(limpar(numItens[2].text)):null,
+      dc,
+    };
+  }
+
+  function parseSecao(grupos, anchors, headerIdx, cvAnchorX, meta) {
+    const negs=[];
+    const STOP=/resumo dos neg|taxa de corretagem|bovespa\/soma|bovespa \/ soma/i;
+    for (let i=headerIdx+1;i<grupos.length;i++) {
+      const g=grupos[i];
+      if (STOP.test(g.text)) break;
+      const parsed=parseLinha(g.items,anchors);
+      if (!parsed) continue;
+      negs.push({nota:meta.nota,folha:meta.folha,dataPregao:meta.dataPregao,...parsed});
+    }
+    return negs;
+  }
+
+  function parseBR(s) {
+    if (!s) return null;
+    const n=parseFloat(s.trim().replace(/\./g,'').replace(',','.'));
+    return isNaN(n)?null:n;
+  }
+
+  // ── Processamento ─────────────────────────────────────────────────────────────
+  async function processar() {
+    if (!pdfFile) return;
+    debugLog=[];
+    document.getElementById('btnProcess').disabled=true;
+    goStep(2);
+    try {
+      const allItems = await extrairItensPDF(pdfFile);
+      const grupos   = agruparPorY(allItems);
+      log(`Grupos: ${grupos.length}`);
+      setProgress(0,1,'Detectando notas...');
+      const todosCV = allItems.filter(i=>i.text==='C/V');
+      log(`Notas encontradas: ${todosCV.length}`);
+      if (todosCV.length===0) {
+        goStep(1);
+        document.getElementById('btnProcess').disabled=false;
+        toast('Estrutura não encontrada','Nenhum cabeçalho C/V detectado.','error');
+        return;
+      }
+      negociacoes=[];
+      for (let idx=0;idx<todosCV.length;idx++) {
+        const cvItem=todosCV[idx];
+        setProgress(idx+1,todosCV.length,`Processando nota ${idx+1} de ${todosCV.length}...`);
+        const headerItems=allItems.filter(i=>i.page===cvItem.page&&Math.abs(i.y-cvItem.y)<=6);
+        const anchors   =mapearAncoras(headerItems,cvItem);
+        const meta      =extrairMetaDaNota(allItems,cvItem);
+        const headerIdx =grupos.findIndex(g=>g.page===cvItem.page&&Math.abs(g.y-cvItem.y)<=6);
+        const negsDaNota=parseSecao(grupos,anchors,headerIdx,anchors.cv,meta);
+        const proxCvPage=todosCV[idx+1]?.page;
+        const resumo    =extrairResumoFinanceiro(allItems,cvItem,proxCvPage);
+        for (const neg of negsDaNota) Object.assign(neg,resumo);
+        log(`  Nota ${meta.nota} (${meta.dataPregao}): ${negsDaNota.length} neg(ões)`);
+        negociacoes.push(...negsDaNota);
+      }
+      log(`\nTotal: ${negociacoes.length} negociação(ões)`);
+      setProgress(todosCV.length,todosCV.length,'Concluído!');
+      await new Promise(r=>setTimeout(r,350));
+      filtradas=[...negociacoes];
+      popularFiltroNota();
+      renderKPIs();
+      renderPie();
+      renderTabela();
+      goStep(3);
+      const nu=[...new Set(negociacoes.map(n=>n.nota))].length;
+      toast(
+        negociacoes.length>0?'Processamento concluído':'Atenção',
+        negociacoes.length>0?`${negociacoes.length} negociações em ${nu} nota(s)`:'0 negociações. Verifique o Diagnóstico.',
+        negociacoes.length>0?'ok':'error'
+      );
+    } catch(err) {
+      console.error(err); log('EXCEÇÃO:',err.message);
+      goStep(1);
+      document.getElementById('btnProcess').disabled=false;
+      toast('Erro ao processar',err.message,'error');
+    }
+  }
+
+  // ── KPIs ─────────────────────────────────────────────────────────────────────
+  function renderKPIs() {
+    const notasUni=[...new Set(negociacoes.map(n=>n.nota))];
+    const volC=negociacoes.filter(n=>n.cv==='C').reduce((s,n)=>s+(n.valorOperacao||0),0);
+    const volV=negociacoes.filter(n=>n.cv==='V').reduce((s,n)=>s+(n.valorOperacao||0),0);
+    const taxaTotal=negociacoes.reduce((s,n)=>s+(n.taxaLiquidacao||0)+(n.emolumentos||0),0)/Math.max(notasUni.length,1);
+    const datas=[...new Set(negociacoes.map(n=>n.dataPregao).filter(Boolean))].sort();
+    const periodo=datas.length>1?`${datas[0]} → ${datas[datas.length-1]}`:(datas[0]||'—');
+    const fmt=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+    const kpis=[
+      {label:'Notas',         value:notasUni.length,  icon:'📋',sub:periodo},
+      {label:'Negociações',   value:negociacoes.length,icon:'📊',sub:'total extraídas'},
+      {label:'Vol. Compras',  value:fmt(volC),         icon:'🔴',sub:'soma valor op. C'},
+      {label:'Vol. Vendas',   value:fmt(volV),         icon:'🟢',sub:'soma valor op. V'},
+      {label:'Saldo Líquido', value:fmt(volC-volV),    icon:'⚖️',sub:'compras − vendas'},
+      {label:'Taxa Média/Nota',value:fmt(taxaTotal),   icon:'💸',sub:'liquidação + emolumentos'},
+    ];
+    document.getElementById('kpiGrid').innerHTML=kpis.map(k=>`
+      <div class="kpi-card">
+        <div class="kpi-icon">${k.icon}</div>
+        <div class="kpi-label">${k.label}</div>
+        <div class="kpi-value">${k.value}</div>
+        ${k.sub?`<div class="kpi-sub">${k.sub}</div>`:''}
+      </div>`).join('');
+    const nu=[...new Set(negociacoes.map(n=>n.nota))].length;
+    document.getElementById('resultsSubtitle').textContent=
+      `${negociacoes.length} negociação(ões) · ${nu} nota(s) · ${periodo}`;
+  }
+
+  // ── Pie chart ─────────────────────────────────────────────────────────────────
+  function renderPie() {
+    const volC=negociacoes.filter(n=>n.cv==='C').reduce((s,n)=>s+(n.valorOperacao||0),0);
+    const volV=negociacoes.filter(n=>n.cv==='V').reduce((s,n)=>s+(n.valorOperacao||0),0);
+    const total=volC+volV;
+    const canvas=document.getElementById('pieCanvas');
+    const ctx=canvas.getContext('2d');
+    const cx=75,cy=75,r=65;
+    ctx.clearRect(0,0,150,150);
+    if (total===0) {
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fillStyle='#1e2d45'; ctx.fill();
+    } else {
+      /* Mercado financeiro BR: COMPRA = vermelho, VENDA = verde */
+      const slices=[{pct:volC/total,color:'#ef4444'},{pct:volV/total,color:'#22c55e'}];
+      let ang=-Math.PI/2;
+      for (const s of slices) {
+        const end=ang+s.pct*Math.PI*2;
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,ang,end); ctx.closePath();
+        ctx.fillStyle=s.color; ctx.fill(); ang=end;
+      }
+      ctx.beginPath(); ctx.arc(cx,cy,r*.48,0,Math.PI*2); ctx.fillStyle='#111827'; ctx.fill();
+      ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(Math.round((volC/total)*100)+'% C',cx,cy);
+    }
+    const fmt=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+    document.getElementById('pieLegend').innerHTML=`
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div><span>Compras</span><span class="legend-val" style="color:#f87171">${fmt(volC)}</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div><span>Vendas</span><span class="legend-val" style="color:#4ade80">${fmt(volV)}</span></div>`;
+  }
+
+  // ── Tabela interativa ─────────────────────────────────────────────────────────
+  const COLS=[
+    {key:'nota',         label:'Nota #'},
+    {key:'dataPregao',   label:'Data'},
+    {key:'cv',           label:'C/V'},
+    {key:'tipoMercado',  label:'Tipo Mercado'},
+    {key:'especificacao',label:'Especificação'},
+    {key:'prazo',        label:'Prazo'},
+    {key:'obs',          label:'Obs'},
+    {key:'quantidade',   label:'Qtd',      num:true},
+    {key:'preco',        label:'Preço',    num:true},
+    {key:'valorOperacao',label:'Valor Op.',num:true},
+    {key:'dc',           label:'D/C'},
+  ];
+
+  function popularFiltroNota() {
+    const notas=[...new Set(negociacoes.map(n=>n.nota))].sort();
+    document.getElementById('filterNota').innerHTML=
+      '<option value="">Todas as notas</option>'+notas.map(n=>`<option value="${n}">${n}</option>`).join('');
+  }
+
+  function filtrarTabela() {
+    const q   =document.getElementById('searchInput').value.toLowerCase();
+    const nota=document.getElementById('filterNota').value;
+    const cv  =document.getElementById('filterCV').value;
+    filtradas=negociacoes.filter(n=>{
+      if (nota&&n.nota!==nota) return false;
+      if (cv&&n.cv!==cv)       return false;
+      if (q) {
+        const h=[n.nota,n.especificacao,n.tipoMercado,n.dataPregao].join(' ').toLowerCase();
+        if (!h.includes(q)) return false;
+      }
+      return true;
+    });
+    if (sortCol!==null) aplicarOrdenacao();
+    currentPage=1;
+    renderTabela();
+  }
+
+  function aplicarOrdenacao() {
+    filtradas.sort((a,b)=>{
+      const va=a[sortCol]??'', vb=b[sortCol]??'';
+      if (typeof va==='number'&&typeof vb==='number') return (va-vb)*sortDir;
+      return String(va).localeCompare(String(vb))*sortDir;
+    });
+  }
+
+  function toggleSort(key) {
+    if (sortCol===key) sortDir*=-1; else { sortCol=key; sortDir=1; }
+    aplicarOrdenacao(); renderTabela();
+  }
+
+  function renderTabela() {
+    document.getElementById('tableHead').innerHTML='<tr>'+
+      COLS.map(c=>{
+        let cls='';
+        if (sortCol===c.key) cls=sortDir===1?'sort-asc':'sort-desc';
+        return `<th class="${cls}" onclick="toggleSort('${c.key}')">${c.label}</th>`;
+      }).join('')+'</tr>';
+
+    const total =filtradas.length;
+    const start =(currentPage-1)*PAGE_SIZE;
+    const slice =filtradas.slice(start,start+PAGE_SIZE);
+    document.getElementById('tableCount').textContent=`${total} registro(s)`;
+
+    const tbody=document.getElementById('tabelaBody');
+    if (!slice.length) {
+      tbody.innerHTML=`<tr><td colspan="${COLS.length}" style="text-align:center;color:#475569;padding:2rem">Nenhum resultado</td></tr>`;
+    } else {
+      const fmtNum=(v,d=0)=>v!==null&&v!==undefined?v.toLocaleString('pt-BR',{minimumFractionDigits:d}):'—';
+      tbody.innerHTML=slice.map(n=>{
+        const bc=n.cv==='C'?'badge-c':'badge-v';
+        const bl=n.cv==='C'?'COMPRA':'VENDA';
+        const dcc=n.dc==='D'?'badge-d':'badge-cr';
+        return `<tr>
+          <td>${n.nota}</td>
+          <td>${n.dataPregao}</td>
+          <td><span class="badge ${bc}">${bl}</span></td>
+          <td>${n.tipoMercado}</td>
+          <td>${n.especificacao}</td>
+          <td>${n.prazo}</td>
+          <td>${n.obs}</td>
+          <td style="text-align:right">${fmtNum(n.quantidade)}</td>
+          <td style="text-align:right">${fmtNum(n.preco,2)}</td>
+          <td style="text-align:right">${fmtNum(n.valorOperacao,2)}</td>
+          <td><span class="badge ${dcc}">${n.dc}</span></td>
+        </tr>`;
+      }).join('');
+    }
+    renderPaginacao(total);
+  }
+
+  function renderPaginacao(total) {
+    const totalPages=Math.max(1,Math.ceil(total/PAGE_SIZE));
+    const start=(currentPage-1)*PAGE_SIZE+1;
+    const end=Math.min(currentPage*PAGE_SIZE,total);
+    document.getElementById('pageInfo').textContent=total?`${start}–${end} de ${total}`:'0 resultados';
+    const cont=document.getElementById('pageBtns');
+    let html=`<button class="page-btn" onclick="changePage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+    for (let p=1;p<=totalPages;p++) {
+      if (totalPages>7&&Math.abs(p-currentPage)>2&&p!==1&&p!==totalPages) {
+        if (p===currentPage-3||p===currentPage+3) html+=`<span style="color:#475569;padding:0 .2rem">…</span>`;
+        continue;
+      }
+      html+=`<button class="page-btn ${p===currentPage?'active':''}" onclick="changePage(${p})">${p}</button>`;
+    }
+    html+=`<button class="page-btn" onclick="changePage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>`;
+    cont.innerHTML=html;
+  }
+
+  function changePage(p) {
+    const total=Math.ceil(filtradas.length/PAGE_SIZE);
+    if (p<1||p>total) return;
+    currentPage=p; renderTabela();
+  }
+
+  // ── Excel ─────────────────────────────────────────────────────────────────────
+  function exportarExcel() {
+    if (!negociacoes.length) return;
+    const wb=XLSX.utils.book_new();
+    const negRows=negociacoes.map(n=>({
+      'Nota #':n.nota,'Folha':n.folha,'Data Pregão':n.dataPregao,'Nº Negociação':n.numNeg||'',
+      'C/V':n.cv==='C'?'COMPRA':'VENDA','Tipo Mercado':n.tipoMercado,'Prazo':n.prazo,
+      'Especificação':n.especificacao,'Obs':n.obs,'Quantidade':n.quantidade,
+      'Preço / Ajuste':n.preco,'Valor Operação':n.valorOperacao,'D/C':n.dc,
+      'Val. Líquido Operações':n.valorLiquidoOperacoes,'Taxa Liquidação':n.taxaLiquidacao,
+      'Taxa Registro':n.taxaRegistro,'Debêntures':n.debentures,'Vendas à Vista':n.vendasAVista,
+      'Compras à Vista':n.comprasAVista,'Opções Compras':n.opcoesCompras,'Opções Vendas':n.opcoesVendas,
+      'Operações a Termo':n.operacoesATermo,'Val. Títulos Públicos':n.valorTitulosPublicos,
+      'Valor das Operações':n.valorDasOperacoes,'Taxa Termo/Opções':n.taxaTermoOpcoes,
+      'Taxa A.N.A.':n.taxaANA,'Emolumentos':n.emolumentos,
+    }));
+    const wsNeg=XLSX.utils.json_to_sheet(negRows);
+    wsNeg['!cols']=[
+      {wch:14},{wch:8},{wch:14},{wch:18},{wch:10},{wch:20},{wch:8},{wch:32},{wch:6},
+      {wch:12},{wch:16},{wch:16},{wch:5},{wch:22},{wch:18},{wch:16},{wch:14},{wch:16},
+      {wch:16},{wch:16},{wch:16},{wch:18},{wch:22},{wch:20},{wch:18},{wch:14},{wch:14},
+    ];
+    XLSX.utils.book_append_sheet(wb,wsNeg,'Negociações');
+
+    const notasUni=[...new Set(negociacoes.map(n=>n.nota))];
+    const resumoRows=notasUni.map(nota=>{
+      const nlist=negociacoes.filter(n=>n.nota===nota);
+      const first=nlist[0]||{};
+      return {
+        'Nota #':nota,'Data Pregão':first.dataPregao||'','Negociações':nlist.length,
+        'Qtd Total':nlist.reduce((s,n)=>s+(n.quantidade||0),0),
+        'Vol. Compras':nlist.filter(n=>n.cv==='C').reduce((s,n)=>s+(n.valorOperacao||0),0),
+        'Vol. Vendas':nlist.filter(n=>n.cv==='V').reduce((s,n)=>s+(n.valorOperacao||0),0),
+        'Val. Líquido Op.':first.valorLiquidoOperacoes??'','Taxa Liquidação':first.taxaLiquidacao??'',
+        'Taxa Registro':first.taxaRegistro??'','Taxa Termo/Opções':first.taxaTermoOpcoes??'',
+        'Taxa A.N.A.':first.taxaANA??'','Emolumentos':first.emolumentos??'',
+      };
+    });
+    const wsRes=XLSX.utils.json_to_sheet(resumoRows);
+    wsRes['!cols']=Array(12).fill({wch:18});
+    XLSX.utils.book_append_sheet(wb,wsRes,'Resumo por Nota');
+
+    const dataMin=negociacoes.map(n=>n.dataPregao).filter(Boolean).sort()[0]||'';
+    XLSX.writeFile(wb,`notas_${dataMin.replace(/\//g,'-')}.xlsx`);
+    toast('Excel gerado','Download iniciado','ok');
+  }
+</script>
+</body>
+</html>
